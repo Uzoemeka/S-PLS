@@ -1,134 +1,171 @@
 # devtools :: install _ github ( ’ s elb ou ha dd an i / PPLS / Package /PPLS ’)
-library ( mvtnorm ); library ( PPLS ); library ( pracma ); library ( Renvlp ); library ( pls );
-library ( PPLS ); library ( matrixStats ); library ( fBasics ); library ( Hmisc ); library ( ggplot2 );
-library ( reshape2 ); library ( simrel ); library ( future.apply ) library ( MASS );
-# devtools :: install _ github (" s el bou ha dd an i / PO2PLS@RCpp ")
-library ( OmicsPLS ); library ( PO2PLS )
+### Load Required Libraries
 #________________________________________________________________________________ 
 #__________________________ data simulation _____________________________________
 #________________________________________________________________________________ 
-rm( list = ls ())
-set.seed (100)
-runs <- 100 # zhu used 200 replications
-n <- 30 # zhu used 50 to 1000
-p <- 5
-r <- 3
-q <- 2
-delt <- 0.8
-rho <- 0.01
-# I R n 3 0 p 5 r 3 q 2 d e l t a 0 _8 rho0 _8
-gramschmidt <- function (x) {
-  x <- as.matrix (x)
-  # Get the number of rows and columns of the matrix
-  n <- ncol (x)
-  m <- nrow (x)
-  # Initialize the Q and R matrices
-  q <- matrix (0 , m , n )
-  r <- matrix (0 , n , n )
-  for (j in 1: n) {
-    v = x [,j] # Step 1 of the Gram - Schmidt process v1 = a1
-    # Skip the first column
+library(mvtnorm)
+library(PPLS)
+library(pracma)
+library(Renvlp)
+library(pls)
+library(matrixStats)
+library(fBasics)
+library(Hmisc)
+library(ggplot2)
+library(reshape2)
+library(simrel)
+library(future.apply)
+library(MASS)
+library(OmicsPLS)
+library(PO2PLS)
+
+### Initialize Environment
+rm(list = ls())
+set.seed(100)
+
+### Define Simulation Parameters
+runs <- 100  # Number of replications
+n <- 30      # Sample size
+p <- 5       # Number of predictors
+r <- 3       # Number of response variables
+q <- 2       # Number of latent variables
+delt <- 0.8  # Correlation decay parameter
+rho <- 0.01  # Covariance decay parameter
+
+### Define Gram-Schmidt Process for Orthonormalization
+gram_schmidt <- function(x) {
+  x <- as.matrix(x)
+  m <- nrow(x)
+  n <- ncol(x)
+  q <- matrix(0, m, n)
+  r <- matrix(0, n, n)
+  
+  process_column <- function(j) {
+    v <- x[, j]
     
     if (j > 1) {
-      for (i in 1:( j -1)) {
-        r[i ,j] <- t(q[,i ]) %* % x[, j] # Find the inner product ( noted to be q ˆ T a
-        # earlier ) Subtract the projection from v which causes v to become pe rp end ic ul ar
-        # to all columns of Q
-        v <- v - r [i ,j] * q[,i ]
-      }
+      lapply(1:(j - 1), function(i) {
+        r[i, j] <<- t(q[, i]) %*% x[, j]
+        v <<- v - r[i, j] * q[, i]
+      })
     }
-    # Find the L2 norm of the jth diagonal of R
-    r[j ,j] <- sqrt ( sum (vˆ2))
-    # The o r t h o g o n a l i z e d result is found and stored in the ith column of Q .
-    q[,j ] <- v / r[j ,j]
+    
+    r[j, j] <<- sqrt(sum(v^2))
+    q[, j] <<- v / r[j, j]
   }
-  # Collect the Q and R matrices into a list and return
-  qrcomp <- list ( 'Q'=q, 'R'= r)
-  return ( qrcomp )
+  
+  lapply(1:n, process_column)
+  
+  list(Q = q, R = r)
 }
-gamma <- gramschmidt ( matrix ( rnorm (p*p , 0, 1) , p , p ))$ Q
-gamma1 <- gamma [ ,1:q]
-gamma0 <- gamma [ ,(q +1): p]
-sig <- matrix (0 , p ,p)
-for (i in 1: p ){
-  for (j in 1: p ){
-    sig [i , j] <- rhoˆ( abs (i - j ))
-  }
-}
-# omega <- eigen ( sig )$ values
-# sigx <- gamma1 %* % diag ( omega [1: q ] , q ) %* %t ( gamma1 ) +
-# gamma0 %* % diag ( omega [( q +1): p ] , (p - q )) %* %t ( gamma0 )
-omega <- sort ( eigen ( sig )$ values , decreasing = F)
-sigx <- gamma1 %* % diag ( omega [1: q], q) %* % t( gamma1 ) +
-  gamma0 %* % diag ( omega [(q +1): p], (p -q)) %* % t( gamma0 )
-sigy.x <- matrix (0 , r ,r)
-for (i in 1: r ){
-  for (j in 1: r ){
-    sigy.x[i ,j] <- deltˆ( abs (i - j ))
-  }
-}
-# sigy . x <- diag ( c (2 ,1.5 ,0.5) , r )
-Beta <- gamma1 %* % matrix ( runif (q *r , 0, 2) , q, r)
-X <- list (); E <- list (); Y <- list ()
-for (k in 1: runs ){
-  X[k ] <- list ( mvrnorm (n , rep (0 , p ), sigx ))
-  E[k ] <- list (1* mvrnorm (n , rep (0 , r ), sigy.x ))
-  Y[k ] <- list ( scale (X [[ k ]] %* % Beta + E [[ k ]]))
-  X[k ] <- list ( scale (X [[ k ]]))
-}
-# cor ( X [[1]])
+
+
+### Generate Gamma Matrix
+gamma <- gram_schmidt(matrix(rnorm(p * p, 0, 1), p, p))$Q
+gamma1 <- gamma[, 1:q]
+gamma0 <- gamma[, (q + 1):p]
+
+### Construct Covariance Matrix sig
+sig <- outer(1:p, 1:p, function(i, j) rho^(abs(i - j)))
+
+### Compute Eigenvalues and Construct sigx
+omega <- sort(eigen(sig)$values, decreasing = FALSE)
+sigx <- gamma1 %*% diag(omega[1:q], q) %*% t(gamma1) +
+  gamma0 %*% diag(omega[(q + 1):p], (p - q)) %*% t(gamma0)
+
+### Construct sigy.x Matrix
+sigy.x <- outer(1:r, 1:r, function(i, j) delt^(abs(i - j)))
+
+
+### Generate Beta Matrix
+Beta <- gamma1 %*% matrix(runif(q * r, 0, 2), q, r)
+
+### Simulate Data
+# Create lists of the required lengths
+X <- vector("list", runs)
+E <- vector("list", runs)
+Y <- vector("list", runs)
+
+# Use lapply to replace the for loop
+lapply(1:runs, function(k) {
+  X[[k]] <<- scale(mvrnorm(n, rep(0, p), sigx))  # scale after generating X
+  E[[k]] <<- mvrnorm(n, rep(0, r), sigy.x)  # E is generated
+  Y[[k]] <<- scale(X[[k]] %*% Beta + E[[k]])  # Y is generated by the matrix operation
+})
 
 
 
 
-
-
-
-plan ( multiprocess )
 #________________________________________________________________________________ 
 #___________________________________________ Using the Envelope
 #________________________________________________________________________________ 
 
-fold = k = 10
-groups <- sample ( rep ( seq_len ( fold ), length.out = n ))
-myenvCv <- function (X ,Y ,k ){
-  # Y <- as . matrix ( Y [[1]]); X <- as . matrix ( X [[1]])
+library(pls)
+library(future)
+library(future.apply)
+
+# Plan for multiprocessing
+plan(multisession)  # Alternatively, you can use multiprocess if running on local machines or multisession for remote execution
+
+fold = 10
+groups <- sample(rep(seq_len(fold), length.out = n))  # Groups for cross-validation
+
+# Define the envelope cross-validation function
+myenvCv <- function(X, Y, k) {
+  Y <- as.matrix(Y)
+  X <- as.matrix(X)
   
-  Y <- as.matrix (Y ); X <- as.matrix (X)
-  a <- dim (Y ); n <- a [1]; r <- a [2]; p <- ncol (X ); p <- p -1
-  fitt <- plsr (Y ~ X , ncomp = p , method = " simpls ")$loadings
-  M <- list ()
-  efit <- matrix (M ,k ,p)
-  for (i in 1: k ){
-    for (j in 1: p ){
-      efit [i , j] <- list ( xenv (X[ groups !=i ,] , Y[ groups !=i ,] , u = j , asy = F ,
-                                   as.matrix ( fitt [ ,1: j ])))
-    }
-  }
-  prederror <- matrix (M ,k ,p)
-  for (i in 1: k ){
-    for (j in 1: p ){
-      prederror[i ,j] <- list (as.matrix (Y[ groups == i ,] - as.matrix (X[ groups == i ,])
-                                            %* % efit [[ i ,j ]]$ beta ))
-    }
-  }
-  ecv <- matrix (0 ,k ,p )
-  for (i in 1: k ){
-    for (j in 1: p ){
-      ecv [i , j] <- norm ( prederror [i , j ][[1]] , type = "F")
-    }
-  }
-  return ( envpls = colMeans ( ecv ))
+  # Dimensions of Y and X
+  a <- dim(Y)
+  n <- a[1]  # Number of observations
+  r <- a[2]  # Number of responses
+  p <- ncol(X)  # Number of predictors
+  
+  # PLS fitting and initial loadings
+  fitt <- plsr(Y ~ X, ncomp = p, method = "simpls")$loadings
+  M <- list()  # Empty list to store models
+  
+  # Matrix to store fitted models for all folds and components
+  efit <- array(NA, dim = c(k, p))  # Replace list with array to hold fitted models
+  
+  # Generate the fitted models using envelope regression
+  # We do this in matrix form by iterating over components and folds
+  efit[] <- mapply(function(i, j) {
+    xenv(X[groups != i, ], Y[groups != i, ], u = j, asy = FALSE, as.matrix(fitt[, 1:j]))
+  }, rep(1:k, each = p), rep(1:p, times = k), SIMPLIFY = FALSE)
+  
+  # Calculate the prediction errors (predicted Y - actual Y) in matrix form
+  prederror <- array(NA, dim = c(k, p))
+  
+  prederror[] <- mapply(function(i, j) {
+    Y[groups == i, ] - X[groups == i, ] %*% efit[[i, j]]$beta
+  }, rep(1:k, each = p), rep(1:p, times = k), SIMPLIFY = FALSE)
+  
+  # Compute the Frobenius norm for the cross-validation errors
+  ecv <- matrix(0, k, p)
+  
+  ecv[] <- mapply(function(i, j) {
+    norm(prederror[[i, j]], type = "F")  # Frobenius norm of the error
+  }, rep(1:k, each = p), rep(1:p, times = k))
+  
+  # Return the mean cross-validation error for each component
+  return(colMeans(ecv))
 }
-envrepp1 <- matrix ( unlist ( future_lapply (1: runs , function (i) myenvCv (X=X [[ i ]] ,
-                                                                               Y=Y [[ i ]] , k = fold ))) ,
-                     ncol =p -1 , byrow =T)
-ecv_mn1 <- colMeans ( envrepp1 ); ecv_sd1 <- colSds ( envrepp1 )
-sink (" EIRn30p5r3q2delta0 _8 rho0 _ 01. txt ")
-print ( envrepp1 )
-print ( colMeans ( envrepp1 ))
-print ( colSds ( envrepp1 ))
-sink ()
+
+# Parallelize the cross-validation for each run
+envrepp1 <- matrix(unlist(future_lapply(1:runs, function(i) myenvCv(X = X[[i]], Y = Y[[i]], k = fold))), 
+                   ncol = p - 1, byrow = TRUE)
+
+# Calculate mean and standard deviation of cross-validation errors
+ecv_mn1 <- colMeans(envrepp1)
+ecv_sd1 <- apply(envrepp1, 2, sd)
+
+# Save results to file
+sink("EIRn30p5r3q2delta0_8_rho0_01.txt")
+print(envrepp1)
+print(colMeans(envrepp1))
+print(colSds(envrepp1))
+sink()
 
 
 
@@ -138,36 +175,62 @@ sink ()
 #_______________________________________Using the SIMPLS ________________________
 #________________________________________________________________________________ 
 
-mysimplsCv <- function (X ,Y ,k ){
-  Y <- as.matrix (Y)
-  X <- as.matrix (X)
-  a <- dim (Y)
-  n <- a [1]
-  r <- a [2]
-  p <- ncol (X)
-  sfit <- NULL
-  for (i in 1: k ){
-    sfit [i] <- list ( plsr(Y[ groups !=i ,] ~ X[ groups !=i ,] , ncomp = p , method = " simpls " ))
-  }
-  cv <- matrix (0 ,k ,p )
-  for (i in 1: k ){
-    for (j in 1: p ){
-      cv [i ,j ] <- norm( as.matrix ( Y[ groups ==i ,] ~ X[ groups ==i ,] %*% 
-                                        as.matrix ( sfit [[ i ]]$coefficients [,, j ]) ))
-    }
-    }
-  return ( splsCv <- colMeans ( cv ))
+library(pls)
+library(future)
+library(future.apply)
+
+# Plan for parallel processing
+plan(multisession)  # Use multisession for parallel processing
+
+# Define the function for cross-validation using PLS with simpls method
+mysimplsCv <- function(X, Y, k) {
+  # Ensure Y and X are matrices
+  Y <- as.matrix(Y)
+  X <- as.matrix(X)
   
+  # Get dimensions
+  a <- dim(Y)
+  n <- a[1]  # Number of observations
+  p <- ncol(X)  # Number of predictors
+  
+  # Preallocate list to store models
+  sfit <- vector("list", k)  # List to store fitted models
+  
+  # Fit models for each fold
+  sfit <- future_lapply(1:k, function(i) {
+    plsr(Y[groups != i, ] ~ X[groups != i, ], ncomp = p, method = "simpls")
+  })
+  
+  # Preallocate the matrix for cross-validation errors
+  cv <- matrix(0, k, p)
+  
+  # Compute the cross-validation errors (norms)
+  cv[] <- mapply(function(i, j) {
+    norm(
+      Y[groups == i, ] - X[groups == i, ] %*% sfit[[i]]$coefficients[, , j], 
+      type = "F"
+    )
+  }, rep(1:k, each = p), rep(1:p, times = k))
+  
+  # Return the column means of the cross-validation errors
+  return(colMeans(cv))
 }
-simplsrepp1 <- matrix ( unlist ( future_lapply (1: runs , function (i) mysimplsCv (X =X [[ i ]] , Y=Y [[ i ]] ,
-                                                                                     k= fold ))) ,
-                        ncol =p , byrow =T )
-scv_mn1 <- colMeans ( simplsrepp1 ); scv_sd1 <- colSds ( simplsrepp1 )
-sink (" SIRn30p5r3q2delta0 _8 rho0 _ 01. txt ")
-print ( simplsrepp1 )
-print ( colMeans ( simplsrepp1 ))
-print ( colSds ( simplsrepp1 ))
-sink ()
+
+# Parallelize the cross-validation for each run
+simplsrepp1 <- matrix(unlist(future_lapply(1:runs, function(i) {
+  mysimplsCv(X = X[[i]], Y = Y[[i]], k = fold)
+})), ncol = p, byrow = TRUE)
+
+# Calculate mean and standard deviation of cross-validation errors
+scv_mn1 <- colMeans(simplsrepp1)
+scv_sd1 <- apply(simplsrepp1, 2, sd)
+
+# Save results to file
+sink("SIRn30p5r3q2delta0_8_rho0_01.txt")
+print(simplsrepp1)
+print(colMeans(simplsrepp1))
+print(colSds(simplsrepp1))
+sink()
 
 
 
@@ -175,72 +238,76 @@ sink ()
 #________________________________________________________________________________ 
 #____________________________________ Using the EM - PLS _______________________ 
 #________________________________________________________________________________ 
-# myPPLSCv <- function (X , Y , k , emnum ){
-# Y <- as . matrix ( Y ); X <- as . matrix ( X )
-# a <- dim ( Y )
-# n <- a [1]; r <- a [2]
-# p <- ncol ( X )
-# M = list ()
-# pfit <- matrix (M ,k , r )
-# for ( i in 1: k ){
-# for ( j in 1: r ){
-# pfit [i , j ] <- list ( PPLS _ simult ( X = as . matrix ( X [ groups ! =i ,]) ,
-# Y = as . matrix ( Y [ groups ! =i ,]) , a = j , EMsteps = emnum , atol = 1e -09 ,
-# type = " SVD "))
-# }
-# }
-# pp . pred <- matrix (0 , k , r )
-# for ( i in 1: k ){
-# for ( j in 1: r ){
-# pp . pred [i , j ] <- norm ( as . matrix ( Y [ groups == i ,] -
-# X [ groups == i ,] %* % ginv ( pfit [i , j ][[1]] $ estimates $W %* %
-# t ( pfit [i , j ][[1]] $ Expectations $mu _T ) %* %
-# pfit [i , j ][[1]] $ Expectations $mu _T %* %t ( pfit [i , j ][[1]] $ estimates $W )) %* %
-# pfit [i , j ][[1]] $ estimates $W %* %t ( pfit [i , j ][[1]] $ Expectations $mu _T ) %* %
-# pfit [i , j ][[1]] $ Expectations $mu _U %* %
-# t ( pfit [i , j ][[1]] $ estimates $C )) , type =" F ")
-# }
-# }
-# return <- colMeans ( pp . pred )
-# }
-# PPLSrepp1 <- matrix ( unlist ( future _ lapply (1: runs , function ( i ) myPPLSCv ( X = X [[ i ]] ,
-# Y = Y [[ i ]] , k = fold , emnum = 50))) ,
-# ncol =r , byrow = T )
-# pcv _ mn1 <- colMeans ( PPLSrepp1 ); pcv _ sd1 <- colSds ( PPLSrepp1 )
 
 
+library(future)
+library(future.apply)
+library(MASS)  # Assuming ginv comes from MASS
 
-myPPLSCv <- function (X , Y , k , emnum ){
-  Y <- as.matrix (Y ); X <- as.matrix (X)
-  a <- dim (Y ); n <- a [1]; r <- a [2]; p <- ncol (X)
-  # Y <- as . matrix ( Y ); X <- as . matrix ( X )
-  M= list (); pfit <- matrix (M ,k ,r)
-  for (i in 1: k ){
-    for (j in 1: r ){
-      pfit [i , j] <- list ( PO2PLS ( X[ groups !=i ,] , Y[ groups !=i ,] , r = j , 0 , 0, steps = emnum))
-                                      
-    }
-  }
-  pp.pred <- matrix (0 , k ,r)
-  for (i in 1: k ){
-    for (j in 1: r ){
-      pp.pred [i ,j ] <- norm (as.matrix (Y[ groups == i ,] - X[ groups ==i ,] %* % ginv ( pfit [i , j ][[1]] $ params $W
-                                                                                              %* % pfit [i , j ][[1]] $ params $ SigT %* % t( pfit [i , j ][[1]] $ params $W ))
-                                             %* % pfit [i , j ][[1]] $ params $W %* % pfit [i , j ][[1]] $ params $ SigT %* %
-                                               pfit [i , j ][[1]] $ params $B %* % t( pfit [i , j ][[1]] $ params $ C)) ,
-                                 type ="F ")
-    }
-  }
-  return <- colMeans ( pp.pred )
+# Plan for parallel execution
+plan(multisession)  # Use multisession for parallel processing
+
+myPPLSCv <- function(X, Y, k, emnum) {
+  # Convert Y and X to matrices
+  Y <- as.matrix(Y)
+  X <- as.matrix(X)
+  
+  # Get dimensions
+  a <- dim(Y)
+  n <- a[1]  # Number of observations
+  r <- a[2]  # Number of response variables
+  p <- ncol(X)  # Number of predictors
+  
+  # Preallocate the list and matrix for fitted models
+  # Preallocate the list for storing the fitted models
+  pfit <- vector("list", k * r)
+  
+  # Use mapply to apply PO2PLS across both fold and response variable indices
+  pfit[] <- mapply(function(i, j) {
+    PO2PLS(X[groups != i,], Y[groups != i,], r = j, 0, 0, steps = emnum)
+  }, rep(1:k, each = r), rep(1:r, times = k))
+  
+  
+  # Replace the nested for loops with mapply
+  pp.pred <- matrix(0, k, r)  # Preallocate the matrix
+  
+  # Use mapply to iterate over i (fold) and j (response variable)
+  pp.pred[] <- mapply(function(i, j) {
+    # Extract the fitted model
+    model <- pfit[[ (i - 1) * r + j ]]
+    
+    # Calculate the prediction error using Frobenius norm
+    norm(
+      as.matrix(
+        Y[groups == i,] - X[groups == i,] %*% ginv(model$params$W) %*% model$params$SigT %*% t(model$params$W) %*% 
+          model$params$W %*% model$params$SigT %*% model$params$B %*% t(model$params$C)
+      ), 
+      type = "F"
+    )
+  }, rep(1:k, each = r), rep(1:r, times = k))  # Repeat indices for mapply
+  
+  # Now pp.pred is filled with the Frobenius norms
+  
+  
+  # Return column-wise mean of the prediction errors
+  return(colMeans(pp.pred))
 }
-PPLSrepp1 <- matrix ( unlist ( future_lapply (1: runs , function (i) myPPLSCv (X=X [[ i ]] ,
-                                                                                 Y=Y [[ i ]] , k = fold , emnum = 150))) , ncol =r , byrow =T )
-pcv_mn1 <- colMeans ( PPLSrepp1 ); pcv_sd1 <- colSds ( PPLSrepp1 )
-sink (" PIRn30p5r3q2delta0 _8 rho0 _ 01. txt ")
-print ( PPLSrepp1 )
-print ( colMeans ( PPLSrepp1 ))
-print ( colSds ( PPLSrepp1 ))
-sink ()
+
+# Parallelize the cross-validation for each run
+PPLSrepp1 <- matrix(unlist(future_lapply(1:runs, function(i) {
+  myPPLSCv(X = X[[i]], Y = Y[[i]], k = fold, emnum = 150)
+})), ncol = r, byrow = TRUE)
+
+# Calculate mean and standard deviation of cross-validation errors
+pcv_mn1 <- colMeans(PPLSrepp1)
+pcv_sd1 <- apply(PPLSrepp1, 2, sd)
+
+# Save results to file
+sink("PIRn30p5r3q2delta0_8_rho0_01.txt")
+print(PPLSrepp1)
+print(colMeans(PPLSrepp1))
+print(colSds(PPLSrepp1))
+sink()
 
 
 
@@ -248,55 +315,87 @@ sink ()
 #__________________________________ Using the OLS ______________________________
 #________________________________________________________________________________ 
 
-mlmCV <- function (X , Y , k ){
-  Y <- as.matrix (Y ); X <- as.matrix (X ); a <- dim (Y );
-  n <- a [1]; r <- a [2]; p <- ncol (X)
-  # k =10
-  mlm1 <- NULL
-  for (i in 1: k ){
-    mlm1 [i] <- list (lm( cbind (Y[ groups ! =i ,]) ~ X[ groups ! =i ,]))
-  }
-  Yhat1 <- NULL
-  for (i in 1: k ){
-    Yhat1 [i] <- list ( X[ groups ==i ,] %* % coef ( mlm1 [[ i ]])[ -1 ,] )
-  }
-  mlmnorm <- rep (0 , k )
-  for (i in 1: k ){
-    mlmnorm [i ]= norm( as.matrix (Y[ groups == i ,] - Yhat1 [[ i ]]) , type = "F ")
-  }
-  return ( rep ( mean ( mlmnorm ),p ))
+library(future)
+library(future.apply)
+
+# Plan for parallel execution
+plan(multisession)  # Use multisession for parallel processing
+
+mlmCV <- function(X, Y, k) {
+  Y <- as.matrix(Y)
+  X <- as.matrix(X)
+  
+  # Get the dimensions
+  a <- dim(Y)
+  n <- a[1]  # Number of observations
+  r <- a[2]  # Number of response variables
+  p <- ncol(X)  # Number of predictors
+  
+  # Preallocate the list for models and predictions
+  mlm1 <- vector("list", k)  # List to store models for each fold
+  Yhat1 <- vector("list", k)  # List to store predictions for each fold
+  
+  # Fit models for each fold
+  mlm1 <- future_lapply(1:k, function(i) {
+    lm(cbind(Y[groups != i, ]) ~ X[groups != i, ])
+  })
+  
+  # Predict for each fold
+  Yhat1 <- future_lapply(1:k, function(i) {
+    X[groups == i, ] %*% coef(mlm1[[i]])[-1, ]
+  })
+  
+  # Calculate Frobenius norm for each fold
+  mlmnorm <- future_lapply(1:k, function(i) {
+    norm(as.matrix(Y[groups == i, ] - Yhat1[[i]]), type = "F")
+  })
+  
+  # Return the mean of the norms for each response variable
+  return(rep(mean(unlist(mlmnorm)), p))
 }
-mlmrepp <- matrix ( unlist ( future_lapply (1: runs , function (i) mlmCV (X =X [[ i ]] , Y=Y [[ i ]] , k= fold ))) ,
-                    ncol =p , byrow =T )
-lcv_mn <- colMeans( mlmrepp ); lcv_sd <- colSds( mlmrepp )
-sink (" LIRn30p5r3q2delta0 _8 rho0 _ 01. txt ")
-print ( mlmrepp )
-print ( colMeans ( mlmrepp ))
-print ( colSds ( mlmrepp ))
-sink ()
+
+# Parallelize the cross-validation for each run
+mlmrepp <- matrix(unlist(future_lapply(1:runs, function(i) {
+  mlmCV(X = X[[i]], Y = Y[[i]], k = fold)
+})), ncol = p, byrow = TRUE)
+
+# Calculate mean and standard deviation of cross-validation errors
+lcv_mn <- colMeans(mlmrepp)
+lcv_sd <- apply(mlmrepp, 2, sd)
+
+# Save results to file
+sink("LIRn30p5r3q2delta0_8_rho0_01.txt")
+print(mlmrepp)
+print(colMeans(mlmrepp))
+print(colSds(mlmrepp))
+sink()
+
 
 
 
 #________________________________________________________________________________ 
 #____________________________________Plots_______________________________________
 #________________________________________________________________________________ 
-x <- c (1: p)
+# Load ggplot2 library
+library(ggplot2)
 
-plot (x ,c( ecv_mn1 , lcv_mn[1]) , type ="o " , col =" red " , ylab =" Cross - validated  RMSE " ,
-      xlab = expression (" Number ␣ of ␣ components "), lty =1 , pch =20 ,
-      ylim = c(0 , 3) , main = expression ( list (n ==30 , p ==5 , r ==3 , q==2 , rho ==0.01)))
-# errbar (x , ecv _mn1 , ecv _ mn1 + ecv _sd1 , ecv _ mn1 - ecv _sd1 , add = T , col = " red " ,
-# cap =0.01 , pch = 20 , lwd = 0.5 , errbar . col = " red ")
-lines (x , scv_mn1 , type = "o" , pch =20 , col =" blue " , lty =2)
-# errbar ( x* 1.02 , scv _mn1 , scv _ mn1 + scv _sd1 , scv _ mn1 - scv _sd1 , add = T ,
-# cap =0.01 , col = " blue " , pch = 20 , lwd = 0.5 , errbar . col = " blue ")
-lines (c (1: r), pcv_mn1 , type ="o" , col =" black " , pch =20 , lty =3)
-# errbar ( c (1: r ) , pcv _mn1 , pcv _ mn1 + pcv _sd1 , pcv _ mn1 - pcv _sd1 , add = T ,
-# cap =0.01 , col = " black " , pch = 20 , lwd = 0.5 , errbar . col = " black ")
-lines (x , lcv_mn , type = "o " , pch =20 , col = " cyan3 " , lty =4)
-# errbar ( x* 1.04 , lcv _mn , lcv _mn + lcv _sd , lcv _mn - lcv _sd , add = T ,
-# col = " cyan3 " , cap =0.01 , pch = 20 , lwd = 0.5 , errbar . col = " cyan3 ")
-# lines (x , rep ( mean ( unlist ( evar1 )) , p ) , col = " purple " , lty = 5)
-abline (v=q, col = " gray " , lty = 6)
-legend (" bottomright " , legend =c(" EPLS " ," SIMPLS " ,"EM - PLS " , " OLS "),
-        col =c(" red " , " blue " , " black " , " cyan3 " ), lty =1:4 , cex =1)
+# Create a data frame with the necessary values
+df <- data.frame(
+  x = rep(1:p, times = 4),  # x values for the different curves
+  value = c(ecv_mn1, lcv_mn[1], scv_mn1, pcv_mn1),  # The values for each curve
+  group = rep(c("EPLS", "SIMPLS", "EM-PLS", "OLS"), each = p)  # Different groups (models)
+)
+
+# Create the plot
+ggplot(df, aes(x = x, y = value, color = group, shape = group, linetype = group)) +
+  geom_line() +  # Plot the lines
+  geom_point() +  # Plot points
+  scale_color_manual(values = c("red", "blue", "black", "cyan3")) +  # Custom colors
+  scale_linetype_manual(values = c(1, 2, 3, 4)) +  # Custom line types
+  scale_shape_manual(values = c(20, 20, 20, 20)) +  # Shape of points
+  ggtitle(expression(n == 30, p == 5, r == 3, q == 2, rho == 0.01)) +  # Title
+  xlab("Number of components") +  # X-axis label
+  ylab("Cross-validated RMSE") +  # Y-axis label
+  theme_minimal() +  # Minimal theme
+  theme(legend.position = "bottomright") +  # Move legend to bottom right
+  geom_vline(xintercept = q, linetype = "dashed", color = "gray")  # Vertical line at q
